@@ -1,7 +1,7 @@
 ﻿enter ronnie as actor("ronnie");
-
+enter james as actor("james");
 func hello():
-    enter james as actor("james");
+    
     ronnie: says("hello, james");
     james:  says("what's up, ronnie");
     

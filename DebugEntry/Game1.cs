@@ -1,8 +1,8 @@
 ﻿using System;
-using System.Collections.Generic;
+using System.IO;
 using System.Diagnostics;
-using System.Threading;
 using ImGuiNET;
+using System.Text;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
@@ -18,9 +18,12 @@ internal class Game1 : Game
 {
     private GraphicsDeviceManager _graphics;
     private SpriteBatch _spriteBatch;
-    private Tokeniser tokeniser;
     private PwState state;
     private ImGuiRenderer _imGuiRenderer;
+    private string _filePath = string.Empty;
+    private string _statusMessage = string.Empty;
+    private string _consoleOutput = string.Empty;
+    private StringWriter _consoleWriter;
     
     public Game1()
     {
@@ -28,36 +31,63 @@ internal class Game1 : Game
         Content.RootDirectory = "Content";
         IsMouseVisible = true;
         Window.AllowUserResizing = true;
+    
+        // Create a writer that writes to both console and string
+        var originalConsole = Console.Out;
+        _consoleWriter = new StringWriter();
+        Console.SetOut(new MultiWriter(originalConsole, _consoleWriter));
     }
 
+// Add this class inside Game1 or in a separate file
+    private class MultiWriter : TextWriter
+    {
+        private readonly TextWriter[] _writers;
+    
+        public MultiWriter(params TextWriter[] writers)
+        {
+            _writers = writers;
+        }
+    
+        public override void Write(char value)
+        {
+            foreach (var writer in _writers)
+                writer.Write(value);
+        }
+    
+        public override void WriteLine(string value)
+        {
+            foreach (var writer in _writers)
+                writer.WriteLine(value);
+        }
+    
+        public override Encoding Encoding => Encoding.UTF8;
+    }
     protected override void Initialize()
     {
+        _imGuiRenderer = new ImGuiRenderer(this);
+        _imGuiRenderer.RebuildFontAtlas();
         state = new PwState();
-        // run tests.
-        Stopwatch sw = new Stopwatch();
-        PwAst f = state.ParseFile("tests.pw");
-        sw.Start();
-        state.ExecuteChunk(f);
-        sw.Stop();
-        Console.WriteLine("Evaluated tests in " + sw.ElapsedMilliseconds + " ms.");
-        
-        PwInstance actorTestInstance = new PwActor("ronnie").AsPwInstance();
-        state.ExecuteFunction("test_external_calls", actorTestInstance);
-
-        float fib_n = 20;
-        sw.Restart();
-        var place= state.ExecuteFunction("fib", fib_n);
-        sw.Stop();
-        Console.WriteLine($"Evaluated non-recusive fibonacci to {place} in {sw.ElapsedMilliseconds} ms.");
-
-        sw.Restart();
-        place = state.ExecuteFunction("fib_recursive", fib_n);
-        sw.Stop();
-        Console.WriteLine($"Evaluated recursive fibonacci to {place} in {sw.ElapsedMilliseconds} ms.");
+    
+        // Run tests.pw
+        try
+        {
+            if (File.Exists("tests.pw"))
+            {
+                Console.WriteLine("Running tests.pw...");
+                PwAst ast = state.ParseFile("tests.pw");
+                state.ExecuteChunk(ast);
+                _statusMessage = "Tests executed successfully!";
+                _consoleOutput = _consoleWriter.ToString();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error running tests: {ex.Message}");
+            _statusMessage = $"Error running tests: {ex.Message}";
+        }
+    
         base.Initialize();
-        
     }
-
     protected override void LoadContent()
     {
         _spriteBatch = new SpriteBatch(GraphicsDevice);
@@ -76,7 +106,92 @@ internal class Game1 : Game
     {
         GraphicsDevice.Clear(Color.CornflowerBlue);
 
+        _imGuiRenderer.BeforeLayout(gameTime);
+        
+        ImGui.Begin("Playwright Script Runner");
+        
+        // File input field
+        ImGui.Text("Enter the script name (without .pw):");
+        if (ImGui.InputText("##filename", ref _filePath, 256))
+        {
+            // Input text was modified
+        }
+
+// Run button
+        if (ImGui.Button("Run Script"))
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(_filePath))
+                {
+                    _statusMessage = "Please enter a script name";
+                }
+                else
+                {
+                    string scriptName = _filePath + ".pw";
+                    string currentDirPath = scriptName;
+                    string scriptsDirPath = Path.Combine("Scripts", scriptName);
+            
+                    string fullPath;
+                    if (File.Exists(currentDirPath))
+                    {
+                        fullPath = currentDirPath;
+                    }
+                    else if (File.Exists(scriptsDirPath))
+                    {
+                        fullPath = scriptsDirPath;
+                    }
+                    else
+                    {
+                        _statusMessage = $"Script file not found in current directory or Scripts folder";
+                        return;
+                    }
+
+                    _consoleWriter.GetStringBuilder().Clear();
+                    var sw = new Stopwatch();
+                    sw.Start();
+                    PwAst ast = state.ParseFile(fullPath);
+                    state.ExecuteChunk(ast);
+                    sw.Stop();
+                    _statusMessage = $"Script executed successfully in {sw.ElapsedMilliseconds}ms!";
+                    _consoleOutput = _consoleWriter.ToString();
+                }
+            }
+            catch (Exception ex)
+            {
+                _statusMessage = $"Error: {ex.Message}";
+            }
+        }
+        // Status message
+        if (!string.IsNullOrEmpty(_statusMessage))
+        {
+            ImGui.TextColored(
+                _statusMessage.StartsWith("Error:") ? new System.Numerics.Vector4(1, 0, 0, 1) : new System.Numerics.Vector4(0, 1, 0, 1), 
+                _statusMessage);
+        }
+        
+        // Console output
+        if (!string.IsNullOrEmpty(_consoleOutput))
+        {
+            ImGui.Separator();
+            ImGui.Text("Console Output:");
+            if (ImGui.BeginChild("console", new System.Numerics.Vector2(0, 200), ImGuiChildFlags.None))  
+            {
+                ImGui.TextWrapped(_consoleOutput);
+            }
+            ImGui.EndChild();
+        }
+        
+        ImGui.End();
+        
+        _imGuiRenderer.AfterLayout();
+        
         base.Draw(gameTime);
     }
-    
+
+    protected override void UnloadContent()
+    {
+        _imGuiRenderer?.Dispose();
+        base.UnloadContent();
+    }
 }

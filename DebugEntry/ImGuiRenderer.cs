@@ -12,7 +12,7 @@ namespace ImGuiNET
     /// <summary>
     /// ImGui renderer for use with XNA-likes (FNA & MonoGame)
     /// </summary>
-    public class ImGuiRenderer
+    public class ImGuiRenderer : IDisposable
     {
         private Game _game;
 
@@ -35,6 +35,7 @@ namespace ImGuiNET
 
         private int _textureId;
         private IntPtr? _fontTextureId;
+        private Texture2D _fontTexture;
 
         // Input
         private int _scrollWheelValue;
@@ -81,14 +82,14 @@ namespace ImGuiNET
             unsafe { Marshal.Copy(new IntPtr(pixelData), pixels, 0, pixels.Length); }
 
             // Create and register the texture as an XNA texture
-            var tex2d = new Texture2D(_graphicsDevice, width, height, false, SurfaceFormat.Color);
-            tex2d.SetData(pixels);
+            _fontTexture = new Texture2D(_graphicsDevice, width, height, false, SurfaceFormat.Color);
+            _fontTexture.SetData(pixels);
 
             // Should a texture already have been build previously, unbind it first so it can be deallocated
             if (_fontTextureId.HasValue) UnbindTexture(_fontTextureId.Value);
 
             // Bind the new texture to an ImGui-friendly id
-            _fontTextureId = BindTexture(tex2d);
+            _fontTextureId = BindTexture(_fontTexture);
 
             // Let ImGui know where to find the texture
             io.Fonts.SetTexID(_fontTextureId.Value);
@@ -434,5 +435,29 @@ namespace ImGuiNET
         }
 
         #endregion Internals
+        
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                _fontTexture?.Dispose();
+                _rasterizerState?.Dispose();
+                _vertexBuffer?.Dispose();
+                _indexBuffer?.Dispose();
+                _effect?.Dispose();
+                
+                foreach (var texture in _loadedTextures.Values)
+                {
+                    texture.Dispose();
+                }
+                _loadedTextures.Clear();
+            }
+        }
     }
 }
