@@ -24,6 +24,8 @@ internal class Game1 : Game
     private string _statusMessage = string.Empty;
     private string _consoleOutput = string.Empty;
     private StringWriter _consoleWriter;
+    private string _editorContent = string.Empty;
+    private string _editorFileName = string.Empty;
     
     public Game1()
     {
@@ -38,7 +40,6 @@ internal class Game1 : Game
         Console.SetOut(new MultiWriter(originalConsole, _consoleWriter));
     }
 
-// Add this class inside Game1 or in a separate file
     private class MultiWriter : TextWriter
     {
         private readonly TextWriter[] _writers;
@@ -62,11 +63,17 @@ internal class Game1 : Game
     
         public override Encoding Encoding => Encoding.UTF8;
     }
+
     protected override void Initialize()
     {
         _imGuiRenderer = new ImGuiRenderer(this);
         _imGuiRenderer.RebuildFontAtlas();
         state = new PwState();
+    
+        // Set initial window size and position
+        _graphics.PreferredBackBufferWidth = 1200;  // Increased width to accommodate both windows
+        _graphics.PreferredBackBufferHeight = 800;
+        _graphics.ApplyChanges();
     
         // Run tests.pw
         try
@@ -88,6 +95,7 @@ internal class Game1 : Game
     
         base.Initialize();
     }
+
     protected override void LoadContent()
     {
         _spriteBatch = new SpriteBatch(GraphicsDevice);
@@ -108,16 +116,15 @@ internal class Game1 : Game
 
         _imGuiRenderer.BeforeLayout(gameTime);
         
+        // First window - Script Runner
         ImGui.Begin("Playwright Script Runner");
         
-        // File input field
         ImGui.Text("Enter the script name (without .pw):");
         if (ImGui.InputText("##filename", ref _filePath, 256))
         {
             // Input text was modified
         }
 
-// Run button
         if (ImGui.Button("Run Script"))
         {
             try
@@ -162,7 +169,7 @@ internal class Game1 : Game
                 _statusMessage = $"Error: {ex.Message}";
             }
         }
-        // Status message
+
         if (!string.IsNullOrEmpty(_statusMessage))
         {
             ImGui.TextColored(
@@ -170,7 +177,6 @@ internal class Game1 : Game
                 _statusMessage);
         }
         
-        // Console output
         if (!string.IsNullOrEmpty(_consoleOutput))
         {
             ImGui.Separator();
@@ -182,6 +188,88 @@ internal class Game1 : Game
             ImGui.EndChild();
         }
         
+        ImGui.End();
+
+        // Second window - Script Editor
+        ImGui.Begin("Playwright Script Editor");
+        
+        ImGui.Text("File name (without .pw):");
+        ImGui.InputText("##editorFileName", ref _editorFileName, 256);
+        
+        ImGui.Text("Script content:");
+        ImGui.InputTextMultiline("##editor", ref _editorContent, 10000, new System.Numerics.Vector2(0, 300));
+
+        if (ImGui.Button("Save Script"))
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(_editorFileName))
+                {
+                    _statusMessage = "Please enter a file name";
+                }
+                else
+                {
+                    string fileName = _editorFileName + ".pw";
+                    string dirPath = "Scripts";
+                    
+                    // Create Scripts directory if it doesn't exist
+                    if (!Directory.Exists(dirPath))
+                    {
+                        Directory.CreateDirectory(dirPath);
+                    }
+                    
+                    string fullPath = Path.Combine(dirPath, fileName);
+                    File.WriteAllText(fullPath, _editorContent);
+                    _statusMessage = $"Script saved successfully to {fullPath}!";
+                }
+            }
+            catch (Exception ex)
+            {
+                _statusMessage = $"Error saving file: {ex.Message}";
+            }
+        }
+
+        ImGui.SameLine();
+
+        if (ImGui.Button("Load Script"))
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(_editorFileName))
+                {
+                    _statusMessage = "Please enter a file name";
+                }
+                else
+                {
+                    string fileName = _editorFileName + ".pw";
+                    string currentDirPath = fileName;
+                    string scriptsDirPath = Path.Combine("Scripts", fileName);
+                    
+                    string fullPath;
+                    if (File.Exists(currentDirPath))
+                    {
+                        fullPath = currentDirPath;
+                    }
+                    else if (File.Exists(scriptsDirPath))
+                    {
+                        fullPath = scriptsDirPath;
+                    }
+                    else
+                    {
+                        _statusMessage = $"Script file not found in current directory or Scripts folder";
+                        return;
+                    }
+
+                    _editorContent = File.ReadAllText(fullPath);
+                    _statusMessage = $"Script loaded successfully from {fullPath}!";
+                }
+            }
+            catch (Exception ex)
+            {
+                _statusMessage = $"Error loading file: {ex.Message}";
+            }
+        }
+
         ImGui.End();
         
         _imGuiRenderer.AfterLayout();
